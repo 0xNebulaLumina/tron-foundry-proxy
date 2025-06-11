@@ -142,6 +142,77 @@ async fn handle_post_request(
                         }
                     }
                 }
+                "eth_estimateGas" => {
+                    info!("Processing eth_estimateGas parameters");
+                    debug!("Original eth_estimateGas params: {}", serde_json::to_string_pretty(&rpc_request.params).unwrap_or_else(|_| "Failed to serialize".to_string()));
+
+                    if let Some(params) = &mut rpc_request.params {
+                        if let Some(params_array) = params.as_array_mut() {
+                            // eth_estimateGas should only have one parameter (the transaction object)
+                            // Remove any extra parameters (i.e., "pending") that might cause issues
+                            if params_array.len() > 1 {
+                                info!("eth_estimateGas has {} parameters, truncating to 1", params_array.len());
+                                params_array.truncate(1);
+                            }
+
+                            if let Some(first_param) = params_array.get_mut(0) {
+                                if let Some(obj) = first_param.as_object_mut() {
+                                    // Log all fields in the transaction object
+                                    debug!("eth_estimateGas transaction object fields: {:?}", obj.keys().collect::<Vec<_>>());
+
+                                    // Convert Ethereum addresses to Tron format (add 0x41 prefix)
+                                    if let Some(from_value) = obj.get("from").cloned() {
+                                        if let Some(from_str) = from_value.as_str() {
+                                            if let Some(tron_from) = convert_eth_to_tron_address(from_str) {
+                                                obj.insert("from".to_string(), json!(tron_from));
+                                                info!("Converted 'from' address from {} to {}", from_str, tron_from);
+                                            }
+                                        }
+                                    }
+
+                                    if let Some(to_value) = obj.get("to").cloned() {
+                                        if let Some(to_str) = to_value.as_str() {
+                                            if let Some(tron_to) = convert_eth_to_tron_address(to_str) {
+                                                obj.insert("to".to_string(), json!(tron_to));
+                                                info!("Converted 'to' address from {} to {}", to_str, tron_to);
+                                            }
+                                        } else if to_value.is_null() {
+                                            info!("'to' field is null (contract creation), leaving as-is");
+                                        }
+                                    }
+
+                                    // Apply similar normalizations as eth_call
+                                    // If both "input" and "data" exist, remove "input"
+                                    if obj.contains_key("input") && obj.contains_key("data") {
+                                        obj.remove("input");
+                                        info!("Removed 'input' field (keeping 'data')");
+                                    }
+                                    // If only "input" exists, rename to "data"
+                                    else if let Some(input_value) = obj.remove("input") {
+                                        obj.insert("data".to_string(), input_value);
+                                        info!("Renamed 'input' field to 'data'");
+                                    }
+
+                                    // Remove chainId field as TRON API doesn't support it
+                                    if obj.remove("chainId").is_some() {
+                                        info!("Removed 'chainId' field for TRON API compatibility");
+                                    }
+
+                                    // Remove gas and gasPrice fields as they might cause issues
+                                    if obj.remove("gas").is_some() {
+                                        info!("Removed 'gas' field for TRON API compatibility");
+                                    }
+                                    if obj.remove("gasPrice").is_some() {
+                                        info!("Removed 'gasPrice' field for TRON API compatibility");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    debug!("Normalized eth_estimateGas params: {}", serde_json::to_string_pretty(&rpc_request.params).unwrap_or_else(|_| "Failed to serialize".to_string()));
+                    info!("Final eth_estimateGas request being sent to Tron API: {}", serde_json::to_string(&rpc_request).unwrap_or_else(|_| "Failed to serialize".to_string()));
+                }
                 _ => {}
             }
 
@@ -360,6 +431,33 @@ async fn forward_get_request(
             Err(StatusCode::BAD_GATEWAY)
         }
     }
+}
+
+fn convert_eth_to_tron_address(eth_address: &str) -> Option<String> {
+    // Remove 0x prefix if present
+    let address_hex = if eth_address.starts_with("0x") {
+        &eth_address[2..]
+    } else {
+        eth_address
+    };
+
+    // Ethereum addresses should be 40 hex characters (20 bytes)
+    if address_hex.len() != 40 {
+        warn!("Invalid Ethereum address length: {} (expected 40 hex chars, got {})", eth_address, address_hex.len());
+        return None;
+    }
+
+    // Validate that it's all hex characters
+    if !address_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        warn!("Invalid Ethereum address format (non-hex characters): {}", eth_address);
+        return None;
+    }
+
+    // Convert to Tron format by adding 0x41 prefix
+    let tron_address = format!("0x41{}", address_hex);
+
+    debug!("Converted Ethereum address {} to Tron address {}", eth_address, tron_address);
+    Some(tron_address)
 }
 
 fn enhance_block_response(response_body: &str, method: &str) -> String {
