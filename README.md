@@ -9,7 +9,8 @@ A Rust HTTP proxy server designed for Ethereum JSON-RPC requests with specific o
 - **Method-Specific Override Rules**:
   1. **eth_getTransactionCount**: Returns consistent "0x0" nonce value
   2. **eth_call**: Parameter normalization (input/data fields, chainId removal)
-  3. **Block Response Enhancement**: Fixes invalid/missing stateRoot in block responses
+  3. **eth_estimateGas**: Full Foundry compatibility with address conversion and parameter normalization
+  4. **Block Response Enhancement**: Fixes invalid/missing stateRoot in block responses
 - **Request/Response Processing**:
   - Automatic parameter normalization for TRON API compatibility
   - Response enhancement for Ethereum client compatibility
@@ -53,6 +54,35 @@ cargo build --release
 # https://api.shasta.trongrid.io/jsonrpc for tron shasta testnet
 ./target/release/tron-foundry-proxy --port 8545 --dest https://api.trongrid.io/jsonrpc
 ```
+
+### Foundry Integration
+
+The proxy is specifically designed to work with Foundry tools for Tron development. Once the proxy is running, you can use standard Foundry commands:
+
+#### Contract Deployment
+```bash
+# Deploy contract using Foundry (gas estimation works automatically)
+forge create src/Counter.sol:Counter \
+  --rpc-url http://localhost:8545/ \
+  --private-key 0x8f7dc3d0f5961df9c5ee2fcb59886b87262afad6a00a335aa2f384a74b24c14d \
+  --legacy
+
+# Deploy with manual gas limit (if preferred)
+forge create src/Counter.sol:Counter \
+  --rpc-url http://localhost:8545/ \
+  --private-key 0x8f7dc3d0f5961df9c5ee2fcb59886b87262afad6a00a335aa2f384a74b24c14d \
+  --legacy \
+  --gas-limit 50000000
+```
+
+#### Other Foundry Commands
+```bash
+# Cast commands work through the proxy
+cast block latest --rpc-url http://localhost:8545/
+cast call <contract_address> "balanceOf(address)" <address> --rpc-url http://localhost:8545/
+```
+
+**Note**: The proxy automatically handles the differences between Ethereum and Tron APIs, including address format conversion and parameter normalization, making Foundry tools work seamlessly with Tron networks.
 
 ## Request Processing
 
@@ -123,7 +153,72 @@ The proxy implements intelligent JSON-RPC request/response processing with metho
 }
 ```
 
-#### 3. Block Response Enhancement
+#### 3. eth_estimateGas Foundry Compatibility
+**Purpose**: Enables Foundry's `forge create` command to work without `--gas-limit` by properly handling gas estimation requests
+
+**Key Features**:
+- **Ethereum to Tron Address Conversion**: Converts Ethereum addresses to Tron format by adding `0x41` prefix
+- **Parameter Normalization**: Similar to eth_call (input→data, removes chainId/gas/gasPrice)
+- **Contract Creation Support**: Handles `"to": null` for contract deployment transactions
+- **Parameter Count Fix**: Removes extra parameters that Foundry sends (e.g., "pending")
+
+**Address Conversion Process**:
+- Ethereum address: `0x8f7dc3d0f5961df9c5ee2fcb59886b87262afad6a`
+- Tron address: `0x418f7dc3d0f5961df9c5ee2fcb59886b87262afad6a` (adds `41` prefix)
+
+**Parameter Processing**:
+- **Address conversion**: Converts `from` and `to` addresses to Tron format
+- **Null handling**: Preserves `"to": null` for contract creation
+- **Field normalization**: `input` → `data`, removes `chainId`, `gas`, `gasPrice`
+- **Parameter truncation**: Removes extra parameters beyond the transaction object
+
+**Example**:
+```json
+// Foundry Request (2 parameters)
+{
+  "jsonrpc": "2.0",
+  "method": "eth_estimateGas",
+  "params": [{
+    "from": "0xe0f150addcce307c1a58767437fe537620a2e34a",
+    "to": null,
+    "input": "0x608060405...",
+    "chainId": "0x1",
+    "nonce": "0x0"
+  }, "pending"],
+  "id": 2
+}
+
+// Normalized Request (sent to TRON API)
+{
+  "jsonrpc": "2.0",
+  "method": "eth_estimateGas",
+  "params": [{
+    "from": "0x41e0f150addcce307c1a58767437fe537620a2e34a",
+    "to": null,
+    "data": "0x608060405...",
+    "nonce": "0x0"
+  }],
+  "id": 2
+}
+
+// Successful Response
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": "0x17854"
+}
+```
+
+**Foundry Integration**:
+This fix enables the following Foundry command to work correctly:
+```bash
+forge create src/Contract.sol:Contract \
+  --rpc-url http://localhost:8545/ \
+  --private-key 0x... \
+  --legacy
+```
+
+#### 4. Block Response Enhancement
 **Purpose**: Fixes invalid or missing stateRoot fields in TRON block responses for Ethereum client compatibility
 
 **Processing**:
