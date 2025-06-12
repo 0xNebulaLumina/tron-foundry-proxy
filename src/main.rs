@@ -160,26 +160,26 @@ async fn handle_post_request(
                                     // Log all fields in the transaction object
                                     debug!("eth_estimateGas transaction object fields: {:?}", obj.keys().collect::<Vec<_>>());
 
-                                    // Convert Ethereum addresses to Tron format (add 0x41 prefix)
-                                    if let Some(from_value) = obj.get("from").cloned() {
-                                        if let Some(from_str) = from_value.as_str() {
-                                            if let Some(tron_from) = convert_eth_to_tron_address(from_str) {
-                                                obj.insert("from".to_string(), json!(tron_from));
-                                                info!("Converted 'from' address from {} to {}", from_str, tron_from);
-                                            }
-                                        }
-                                    }
+                                    // // Convert Ethereum addresses to Tron format (add 0x41 prefix)
+                                    // if let Some(from_value) = obj.get("from").cloned() {
+                                    //     if let Some(from_str) = from_value.as_str() {
+                                    //         if let Some(tron_from) = convert_eth_to_tron_address(from_str) {
+                                    //             obj.insert("from".to_string(), json!(tron_from));
+                                    //             info!("Converted 'from' address from {} to {}", from_str, tron_from);
+                                    //         }
+                                    //     }
+                                    // }
 
-                                    if let Some(to_value) = obj.get("to").cloned() {
-                                        if let Some(to_str) = to_value.as_str() {
-                                            if let Some(tron_to) = convert_eth_to_tron_address(to_str) {
-                                                obj.insert("to".to_string(), json!(tron_to));
-                                                info!("Converted 'to' address from {} to {}", to_str, tron_to);
-                                            }
-                                        } else if to_value.is_null() {
-                                            info!("'to' field is null (contract creation), leaving as-is");
-                                        }
-                                    }
+                                    // if let Some(to_value) = obj.get("to").cloned() {
+                                    //     if let Some(to_str) = to_value.as_str() {
+                                    //         if let Some(tron_to) = convert_eth_to_tron_address(to_str) {
+                                    //             obj.insert("to".to_string(), json!(tron_to));
+                                    //             info!("Converted 'to' address from {} to {}", to_str, tron_to);
+                                    //         }
+                                    //     } else if to_value.is_null() {
+                                    //         info!("'to' field is null (contract creation), leaving as-is");
+                                    //     }
+                                    // }
 
                                     // Apply similar normalizations as eth_call
                                     // If both "input" and "data" exist, remove "input"
@@ -198,20 +198,20 @@ async fn handle_post_request(
                                         info!("Removed 'chainId' field for TRON API compatibility");
                                     }
 
-                                    // Remove gas and gasPrice fields as they might cause issues
-                                    if obj.remove("gas").is_some() {
-                                        info!("Removed 'gas' field for TRON API compatibility");
-                                    }
-                                    if obj.remove("gasPrice").is_some() {
-                                        info!("Removed 'gasPrice' field for TRON API compatibility");
-                                    }
+                                    // // Remove gas and gasPrice fields as they might cause issues
+                                    // if obj.remove("gas").is_some() {
+                                    //     info!("Removed 'gas' field for TRON API compatibility");
+                                    // }
+                                    // if obj.remove("gasPrice").is_some() {
+                                    //     info!("Removed 'gasPrice' field for TRON API compatibility");
+                                    // }
                                 }
                             }
                         }
                     }
 
                     debug!("Normalized eth_estimateGas params: {}", serde_json::to_string_pretty(&rpc_request.params).unwrap_or_else(|_| "Failed to serialize".to_string()));
-                    info!("Final eth_estimateGas request being sent to Tron API: {}", serde_json::to_string(&rpc_request).unwrap_or_else(|_| "Failed to serialize".to_string()));
+                    debug!("Final eth_estimateGas request being sent to Tron API: {}", serde_json::to_string(&rpc_request).unwrap_or_else(|_| "Failed to serialize".to_string()));
                 }
                 _ => {}
             }
